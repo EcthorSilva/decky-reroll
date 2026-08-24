@@ -5,16 +5,17 @@ import Trans from '@/lib/i18n'
 import SharedDpad from '@/components/SharedDpad'
 import SharedButtons from '@/components/SharedButtons'
 import { GamepadEventDetail } from '@decky/ui/src/components/FooterLegend'
-import { RiArrowDropRightLine, RiArrowDropLeftLine } from 'react-icons/ri'
+import { RiArrowDropRightLine, RiArrowDropLeftLine, RiLockFill } from 'react-icons/ri'
 import { ActionSoundEffects, PlaySound } from '@/lib/utils'
 import { Snapshot } from 'valtio'
 import { NUMBER_RESULTS_PRE_PAGE } from '@/stores/global'
+import Backend from '@/lib/backend'
 
 interface AddressListProps {
   data: Snapshot<string[][]>
   page: number
   maxPage: number
-  setPage: (page:number) => boolean
+  setPage: (page: number) => boolean
   onSelectItem: (index: number) => void
   onRefresh: () => void
   previewView: string
@@ -26,18 +27,22 @@ const AddressItem = memo(
     item,
     index,
     isActive,
+    isFrozen,
     onFocus,
     onBlur,
     onSelect,
+    onToggleFreeze,
     previewNumValue,
     isAutoFocus,
   }: {
     item: Readonly<string[]>
     index: number
     isActive: boolean
+    isFrozen: boolean
     onFocus: () => void
     onBlur: () => void
     onSelect: () => void
+    onToggleFreeze: () => void
     previewNumValue: number
     isAutoFocus: boolean
   }) => {
@@ -52,23 +57,28 @@ const AddressItem = memo(
         onGamepadFocus={onFocus}
         onGamepadBlur={onBlur}
         onOKButton={onSelect}
+        onSecondaryButton={onToggleFreeze}
         actionDescriptionMap={{
           [GamepadButton.DIR_UP]: Trans('ACTION_MOVE', 'Move'),
           [GamepadButton.DIR_DOWN]: Trans('ACTION_MOVE', 'Move'),
           [GamepadButton.DIR_LEFT]: Trans('ACTION_PREV_PAGE', 'Prev'),
           [GamepadButton.DIR_RIGHT]: Trans('ACTION_NEXT_PAGE', 'Next'),
-          // OK = A
           [GamepadButton.OK]: Trans('ACTION_CHANGE_VALUE', 'Change'),
+          [GamepadButton.SECONDARY]: isFrozen
+            ? Trans('ACTION_UNFREEZE', 'Unfreeze')
+            : Trans('ACTION_FREEZE', 'Freeze'),
         }}
       >
-        <div className={`address-item ${isActive ? 'active' : ''}`}>
+        <div className={`address-item ${isActive ? 'active' : ''} ${isFrozen ? 'frozen' : ''}`}>
           <div className="cursor left">
             <RiArrowDropRightLine />
           </div>
           <div className="cursor right">
             <RiArrowDropLeftLine />
           </div>
-          <div className="serial">{index}</div>
+          <div className="serial">
+            {isFrozen ? <RiLockFill style={{ color: '#5dade2' }} /> : index}
+          </div>
           <div className="address">{address}</div>
           <div className={`value ${itemNumValue !== previewNumValue ? 'difference' : ''}`}>
             {value}
@@ -83,6 +93,7 @@ const AddressItem = memo(
       prev.item[0] === next.item[0] &&
       prev.item[1] === next.item[1] &&
       prev.isActive === next.isActive &&
+      prev.isFrozen === next.isFrozen &&
       prev.previewNumValue === next.previewNumValue
     )
   }
@@ -94,9 +105,28 @@ const AddressList = (props: AddressListProps): JSX.Element => {
   const previewNumValue = Number(props.previewView)
   const [activeIndex, setActiveIndex] = useState<number>(-1)
   const [isHover, setIsHover] = useState(false)
+  const [frozenIndices, setFrozenIndices] = useState<number[]>([])
   const { data, onRefresh } = props
   const onRefreshRef = useRef(onRefresh)
   const hasData = Boolean(data && data.length > 0)
+
+  useEffect(() => {
+    Backend.GetFrozenIndices().then((res) => {
+      if (Array.isArray(res)) setFrozenIndices(res)
+    })
+  }, [props.data])
+
+  const handleToggleFreeze = async (absoluteIndex: number, currentValue: string) => {
+    const isFrozen = frozenIndices.includes(absoluteIndex)
+    const willFreeze = !isFrozen
+
+    await Backend.ToggleFreeze(absoluteIndex, currentValue, willFreeze)
+
+    setFrozenIndices((prev) =>
+      willFreeze ? [...prev, absoluteIndex] : prev.filter((i) => i !== absoluteIndex)
+    )
+    PlaySound(ActionSoundEffects.DigitRollerTyping)
+  }
 
   const Data = useMemo(() => {
     if (!data || data.length === 0) {
@@ -172,8 +202,9 @@ const AddressList = (props: AddressListProps): JSX.Element => {
           <SharedDpad up={true} down={true}>
             <div>{Trans('ACTION_MOVE', 'Move')}</div>
           </SharedDpad>
-          <SharedButtons a={true}>
+          <SharedButtons a={true} x={true}>
             <div>{Trans('ACTION_CHANGE_VALUE', 'Change')}</div>
+            <div>{Trans('ACTION_FREEZE', 'Freeze')}</div>
           </SharedButtons>
         </div>
       </div>
@@ -238,14 +269,13 @@ const AddressList = (props: AddressListProps): JSX.Element => {
           > .address-list-content {
             display: flex;
             flex-direction: column;
-          
+            
             > .address-item-wrap {
               padding: 0;
               display: flex;
               flex-direction: column;
               gap: 2px;
               scroll-margin: 0;
-  
               > .address-item {
                 margin: 0 -16px;
                 padding: 0 16px;
@@ -338,16 +368,19 @@ const AddressList = (props: AddressListProps): JSX.Element => {
         <div className="address-list-content">
           {Data.map((item, index) => {
             const absoluteIndex = index + (props.page - 1) * NUMBER_RESULTS_PRE_PAGE
+            const isFrozen = frozenIndices.includes(absoluteIndex)
             return (
               <AddressItem
                 key={item[0]}
                 item={item}
                 index={absoluteIndex + 1}
                 isActive={ActiveIndex === index}
+                isFrozen={isFrozen}
                 previewNumValue={previewNumValue}
                 onFocus={() => setActiveIndex(index)}
                 onBlur={() => setActiveIndex(-1)}
                 onSelect={() => props.onSelectItem(absoluteIndex)}
+                onToggleFreeze={() => handleToggleFreeze(absoluteIndex, item[1])}
                 isAutoFocus={isHover && index === ActiveIndex}
               />
             )
