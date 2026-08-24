@@ -1,15 +1,12 @@
-import { Focusable } from '@decky/ui'
+import { Focusable, GamepadButton } from '@decky/ui'
 import { JSX, memo, useEffect, useMemo, useRef, useState } from 'react'
-import { GamepadButton } from '@decky/ui/dist/components/FooterLegend'
 import Trans from '@/lib/i18n'
 import SharedDpad from '@/components/SharedDpad'
 import SharedButtons from '@/components/SharedButtons'
-import { GamepadEventDetail } from '@decky/ui/src/components/FooterLegend'
 import { RiArrowDropRightLine, RiArrowDropLeftLine, RiLockFill } from 'react-icons/ri'
 import { ActionSoundEffects, PlaySound } from '@/lib/utils'
 import { Snapshot } from 'valtio'
 import { NUMBER_RESULTS_PRE_PAGE } from '@/stores/global'
-import Backend from '@/lib/backend'
 
 interface AddressListProps {
   data: Snapshot<string[][]>
@@ -17,9 +14,15 @@ interface AddressListProps {
   maxPage: number
   setPage: (page: number) => boolean
   onSelectItem: (index: number) => void
+  frozenIndices: number[]
+  onToggleFreezeItem: (index: number, value: string) => void
   onRefresh: () => void
   previewView: string
   isFullscreen?: boolean
+}
+
+interface LocalGamepadEventDetail {
+  button: number
 }
 
 const AddressItem = memo(
@@ -105,28 +108,9 @@ const AddressList = (props: AddressListProps): JSX.Element => {
   const previewNumValue = Number(props.previewView)
   const [activeIndex, setActiveIndex] = useState<number>(-1)
   const [isHover, setIsHover] = useState(false)
-  const [frozenIndices, setFrozenIndices] = useState<number[]>([])
-  const { data, onRefresh } = props
+  const { data, onRefresh, frozenIndices, onToggleFreezeItem } = props
   const onRefreshRef = useRef(onRefresh)
   const hasData = Boolean(data && data.length > 0)
-
-  useEffect(() => {
-    Backend.GetFrozenIndices().then((res) => {
-      if (Array.isArray(res)) setFrozenIndices(res)
-    })
-  }, [props.data])
-
-  const handleToggleFreeze = async (absoluteIndex: number, currentValue: string) => {
-    const isFrozen = frozenIndices.includes(absoluteIndex)
-    const willFreeze = !isFrozen
-
-    await Backend.ToggleFreeze(absoluteIndex, currentValue, willFreeze)
-
-    setFrozenIndices((prev) =>
-      willFreeze ? [...prev, absoluteIndex] : prev.filter((i) => i !== absoluteIndex)
-    )
-    PlaySound(ActionSoundEffects.DigitRollerTyping)
-  }
 
   const Data = useMemo(() => {
     if (!data || data.length === 0) {
@@ -161,7 +145,7 @@ const AddressList = (props: AddressListProps): JSX.Element => {
     }
   }, [hasData])
 
-  const handleDirection = (event: CustomEvent<GamepadEventDetail>) => {
+  const handleDirection = (event: CustomEvent<LocalGamepadEventDetail>) => {
     const button = event.detail.button
     if (button === GamepadButton.DIR_LEFT) {
       if (props.setPage(props.page - 1)) {
@@ -380,7 +364,7 @@ const AddressList = (props: AddressListProps): JSX.Element => {
                 onFocus={() => setActiveIndex(index)}
                 onBlur={() => setActiveIndex(-1)}
                 onSelect={() => props.onSelectItem(absoluteIndex)}
-                onToggleFreeze={() => handleToggleFreeze(absoluteIndex, item[1])}
+                onToggleFreeze={() => onToggleFreezeItem(absoluteIndex, item[1])}
                 isAutoFocus={isHover && index === ActiveIndex}
               />
             )

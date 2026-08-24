@@ -15,7 +15,7 @@ interface ScanResultsProps {
 
 const ScanResults = (props: ScanResultsProps): JSX.Element => {
   const globalStateSnap = useSnapshot(globalState)
-  const [isFrozen, setIsFrozen] = useState<boolean>(false)
+  const [frozenIndices, setFrozenIndices] = useState<number[]>([])
 
   const containerStyle: React.CSSProperties = {
     display: 'flex',
@@ -24,15 +24,16 @@ const ScanResults = (props: ScanResultsProps): JSX.Element => {
     paddingBlock: 0,
   }
 
-  useEffect(() => {
-    // Verifica se já existem valores travados
+  const syncFrozenIndices = () => {
     Backend.GetFrozenIndices().then((res) => {
-      if (Array.isArray(res) && res.length > 0) {
-        setIsFrozen(true)
-      } else {
-        setIsFrozen(false)
+      if (Array.isArray(res)) {
+        setFrozenIndices(res)
       }
     })
+  }
+
+  useEffect(() => {
+    syncFrozenIndices()
   }, [globalStateSnap.results])
 
   const checkInput = () => {
@@ -75,16 +76,28 @@ const ScanResults = (props: ScanResultsProps): JSX.Element => {
       return
     }
 
-    const nextFreeze = !isFrozen
+    const nextFreeze = frozenIndices.length < globalState.results.List.length
     const count = globalState.results.List.length
     const allIndexes = Array.from({ length: count }, (_, i) => i)
 
-    for (const idx of allIndexes) {
-      await Backend.ToggleFreeze(idx, globalState.changeValue, nextFreeze)
-    }
-
-    setIsFrozen(nextFreeze)
+    setFrozenIndices(nextFreeze ? allIndexes : [])
     PlaySound(ActionSoundEffects.DigitRollerTyping)
+
+    for (const idx of allIndexes) {
+      const val = globalState.results.List[idx]?.[1] || globalState.changeValue
+      await Backend.ToggleFreeze(idx, val, nextFreeze)
+    }
+  }
+
+  const handleToggleFreezeItem = async (index: number, currentValue: string) => {
+    const willFreeze = !frozenIndices.includes(index)
+
+    setFrozenIndices((prev) =>
+      willFreeze ? [...prev, index] : prev.filter((i) => i !== index)
+    )
+    PlaySound(ActionSoundEffects.DigitRollerTyping)
+
+    await Backend.ToggleFreeze(index, currentValue, willFreeze)
   }
 
   const handleRefreshValues = async () => {
@@ -190,8 +203,8 @@ const ScanResults = (props: ScanResultsProps): JSX.Element => {
               padding: 0 6px !important;
               font-size: 11px !important;
               min-width: 0 !important;
-              background-color: ${isFrozen ? '#5dade2' : 'rgba(255, 255, 255, 0.2)'};
-              color: ${isFrozen ? '#23262e' : 'white'};
+              background-color: ${frozenIndices.length > 0 ? '#5dade2' : 'rgba(255, 255, 255, 0.2)'};
+              color: ${frozenIndices.length > 0 ? '#23262e' : 'white'};
             }
           }
           
@@ -230,7 +243,7 @@ const ScanResults = (props: ScanResultsProps): JSX.Element => {
         {globalStateSnap.results.List.length > 0 ? (
           <div className="scan-results-action">
             <DialogButton className="btn-lock-value" onClick={handleToggleFreezeAll}>
-              {isFrozen ? Trans('ACTION_UNFREEZE', 'Unlock') : Trans('ACTION_FREEZE', 'Lock')}
+              {frozenIndices.length > 0 ? Trans('ACTION_UNFREEZE', 'Unlock') : Trans('ACTION_FREEZE', 'Lock')}
             </DialogButton>
             {globalStateSnap.results.List.length > 1 && (
               <DialogButton className="btn-change-all" onClick={handleChangeAllValues}>
@@ -272,6 +285,8 @@ const ScanResults = (props: ScanResultsProps): JSX.Element => {
         maxPage={globalStateSnap.results_max_page}
         setPage={$globalState.setResultsCurrentPage}
         onSelectItem={handleChangeItemValue}
+        frozenIndices={frozenIndices}
+        onToggleFreezeItem={handleToggleFreezeItem}
         previewView={globalStateSnap.changeValue}
         onRefresh={handleRefreshValues}
         isFullscreen={!globalStateSnap.footerLegendVisible}
