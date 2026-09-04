@@ -64,9 +64,9 @@ I’ve kept the **Manual Selection** feature just for this reason. If you think 
 
 ## Future Plans
 - [x] Undo scan
+- [x] Value freezing (Locking)
 - [ ] Support for negative value searching
 - [ ] Temporary save slots for search results
-- [ ] Value freezing (Locking)
 
 ## Maintenance & Contribution
 As an individual developer, my time and energy are limited, so updates may not always be immediate. However, I am the primary user of this plugin myself. As long as I'm using it, the project will remain active as I fix bugs and implement new ideas within my capabilities.
